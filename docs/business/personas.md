@@ -20,25 +20,118 @@ In high-reliability SMT/PCB electronics manufacturing, software must enforce str
 
 ---
 
-## 3. Candidate Personas Summary & Organizational Justification
+## 3. Deep Analysis — BATCH 1 Personas
 
-### 1. Production Operator
-- **Why Needed**: Acts as the first line of defense on the shop floor. Identifies physical defects at AOI/manual stations and initiates the digital incident lifecycle.
+### 3.1 Production Operator (Step 2.2)
 
-### 2. Quality Engineer (Primary Human-in-the-Loop Authority)
-- **Why Needed**: Owns overall root-cause investigation, cross-correlates multi-source evidence, and holds legal/ISO accountability for approving quality findings.
+#### Role & Function
+The Production Operator works directly on the SMT assembly line floor. They monitor stencil printers, pick-and-place feeders, reflow ovens, and AOI inspection stations.
 
-### 3. Manufacturing Engineer
-- **Why Needed**: Focuses on SMT process physics, stencil printing squeegee speeds, placer mounting force, and reflow thermal profiles.
+#### Goals & Responsibilities
+- Keep the SMT line running safely and efficiently.
+- Perform visual confirmation when AOI/SPI flags a potential defect.
+- Log defect incidents quickly with clear shop-floor context.
 
-### 4. Maintenance Engineer
-- **Why Needed**: Focuses on electromechanical machine health, feeder tension, vacuum nozzle wear, and preventative maintenance schedules.
+#### Pain Points & Current Systems
+- Currently forced to enter details in complex MES terminals or physical paper logs.
+- Disconnected systems mean operators rarely get feedback on whether logged issues were investigated or resolved.
 
-### 5. Quality Manager
-- **Why Needed**: Needs macro-level oversight across batches and lines, manages plant-wide risk, and authorizes high-impact actions like placing entire production runs on hold.
+#### ForgeSight Interaction & Permissions
+- **Allowed Actions**: `CREATE_INCIDENT`, `ATTACH_EVIDENCE`, `VIEW_INCIDENT_STATUS`.
+- **Forbidden Actions**: `MODIFY_MACHINE_PARAMS`, `APPROVE_QUALITY_HOLD`, `MODIFY_RECORDS`, `APPROVE_ROOT_CAUSE`, `APPROVE_SUPPLIER_ACTION`.
+- **Why Forbidden**: Operators lack total system visibility across maintenance, supplier lots, and thermal physics. Allowing unverified parameter tweaks or holds from shop-floor terminals risks line stoppage and process instability.
 
-### 6. Supplier Quality Engineer
-- **Why Needed**: Handles external vendor component lot issues and requires rigorous evidence before issuing formal Supplier Corrective Action Requests (SCARs).
+#### User Journey — Production Operator
+```text
+[ AOI Flag / Visual Defect Noticed ]
+                 │
+                 ▼
+[ Operator Reviews Physical PCB Board ]
+                 │
+                 ▼
+[ Opens ForgeSight Mobile/Line Capture UI ]
+                 │
+                 ▼
+[ Submits Image + Batch Context + Operator Notes ]
+                 │
+                 ▼
+[ ForgeSight Creates Incident Context (e.g. INCIDENT-2026-00421) ]
+                 │
+                 ▼
+[ Quality Engineer Automatically Notified ──► Investigation Begins ]
+                 │
+                 ▼
+[ Operator Receives Confirmation & Status Badge ("Under Investigation") ]
+```
 
-### 7. System Administrator
-- **Why Needed**: Controls platform security, model API keys, MCP server connections, and system audit logs without interfering with manufacturing engineering decisions.
+---
+
+### 3.2 Quality Engineer — Primary Persona (Step 2.3)
+
+#### Role & Function
+The Quality Engineer (QE) is the primary human-in-the-loop authority in ForgeSight. They own quality compliance (ISO 9001, IPC-A-610 Class 3), defect containment, root-cause investigation, and scrap reduction.
+
+#### Goals & Responsibilities
+- Conduct thorough, evidence-grounded root-cause investigations.
+- Prevent escaped defects from reaching downstream assembly or customers.
+- Validate AI-generated hypotheses and approve formal incident reports.
+
+#### Pain Points
+- QEs currently spend 70%+ of their time running manual queries across 5 separate systems (AOI image database, MES batch records, placer machine logs, maintenance databases, and PDF SOPs).
+
+#### Decision Authority & Permission Matrix
+- **Permissions**: `READ`, `ANALYZE`, `CREATE`, `MODIFY_HYPOTHESIS`, `REVIEW`, `APPROVE_INVESTIGATION`, `REJECT_HYPOTHESIS`, `SIGN_OFF`.
+- **Why QE is the Human-in-the-Loop Authority**: Quality compliance requires single-point legal and technical accountability. AI can summarize and correlate evidence, but only a human QE has the contextual judgement to sign off on an ISO 9001 audit trail.
+
+#### Investigation Workflow
+```text
+[ Incident Created ] ──► [ Review Visual & CV Findings ]
+                                  │
+                                  ▼
+                     [ Inspect Telemetry & Machine Logs ]
+                                  │
+                                  ▼
+                     [ Search Technical SOPs & Manuals (RAG) ]
+                                  │
+                                  ▼
+                     [ Evaluate Ranked Root-Cause Hypotheses ]
+                                  │
+                                  ▼
+                     [ Modify / Confirm Corrective Actions ]
+                                  │
+                                  ▼
+                     [ Human QE Approval & Sign-Off ] ──► [ Final Report Generated ]
+```
+
+#### Trust & Explainability Requirements
+For a QE to trust an AI recommendation, ForgeSight must provide:
+1. **Visual Grounding**: Defect bounding box, class, confidence score, and raw image.
+2. **Telemetry Provenance**: Exact timestamped machine sensor readings and delta deviations.
+3. **Document Citation**: Document title, version, exact section, and passage text (no un-cited assertions).
+4. **Hypothesis Transparency**: Pro and contra evidence lists for each ranked hypothesis (no hidden chain-of-thought).
+
+---
+
+### 3.3 Manufacturing Engineer (Step 2.4)
+
+#### Role & Function
+The Manufacturing Engineer (ME) focuses on SMT process engineering, machine physics, stencil printing squeegee speeds/pressures, placer mounting force, and reflow furnace thermal profiling.
+
+#### Goals & Responsibilities
+- Maximize SMT line throughput and first-pass yield (FPY).
+- Eliminate process drift and optimize machine operational parameters.
+- Implement physical process improvements.
+
+#### Quality Engineer (QE) vs. Manufacturing Engineer (ME) Comparison
+
+| Dimension | Quality Engineer (QE) | Manufacturing Engineer (ME) |
+| :--- | :--- | :--- |
+| **Primary Focus** | Defect containment, IPC-A-610 standards, ISO compliance, root-cause sign-off | SMT machine physics, thermal profiles, stencil printing, line speed & yield optimization |
+| **Key Question** | *"Is this product defective, what caused it, and is it safe to release?"* | *"What machine/process parameter drifted, and how do we adjust it to optimize yield?"* |
+| **Primary Systems** | AOI/SPI inspection DB, QMS, SOPs, Supplier Lot History | Placer telemetry, Reflow zone temperature logs, Stencil printer settings |
+| **Decision Authority** | Final Incident Investigation Approval, Batch Quality Hold Recommendation | Process Parameter Adjustment Approval, Machine Setup Optimization |
+| **Overlapping Area** | Both review defect statistics, historical incident trends, and root-cause evidence | Both review defect statistics, historical incident trends, and root-cause evidence |
+
+#### Why This Distinction Matters for System Architecture
+- **Permissions**: MEs can recommend process parameter changes, whereas QEs sign off on defect root causes.
+- **Future Software Capabilities**: MEs require deep telemetry correlation tools, while QEs require visual evidence and compliance document retrieval tools.
