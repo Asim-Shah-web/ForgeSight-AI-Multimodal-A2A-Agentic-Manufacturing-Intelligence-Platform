@@ -135,3 +135,85 @@ The Manufacturing Engineer (ME) focuses on SMT process engineering, machine phys
 #### Why This Distinction Matters for System Architecture
 - **Permissions**: MEs can recommend process parameter changes, whereas QEs sign off on defect root causes.
 - **Future Software Capabilities**: MEs require deep telemetry correlation tools, while QEs require visual evidence and compliance document retrieval tools.
+
+---
+
+## 4. Deep Analysis — BATCH 2 Personas
+
+### 4.1 Maintenance Engineer (Step 2.5)
+
+#### Role & Function
+The Maintenance Engineer manages electromechanical machine health, SMT placer nozzle wear, feeder tensioning, reflow oven conveyor maintenance, and preventive/corrective work orders.
+
+#### Operational Boundaries
+- **ForgeSight Can READ**: Machine maintenance history, nozzle inspection records, feeder calibration logs, machine fault logs.
+- **ForgeSight Can RECOMMEND**: Generating a preventative maintenance work order (e.g. *"Recommend replacing Placer Nozzle #3 on Machine PLACER-07 due to recurring vacuum pick drops"*).
+- **Requires Human Approval**: Authorizing a work order, taking a production machine offline.
+- **NEVER Execute Automatically**: Physical machine shutdown, altering physical calibration offsets without engineer sign-off.
+
+#### Conceptual MCP Integration
+Maintenance systems (SAP PM, Maximo) operate as external enterprise resources. ForgeSight will expose maintenance operations via **MCP Tools**:
+- `get_machine_maintenance_history(machine_id)`
+- `get_nozzle_wear_status(machine_id, nozzle_id)`
+- `recommend_work_order(machine_id, maintenance_type, urgency)`
+
+---
+
+### 4.2 Quality Manager (Step 2.6)
+
+#### Role & Function
+The Quality Manager oversees plant-wide quality metrics, ISO 9001 / IATF 16949 audit compliance, customer RMA reduction, and high-impact risk management.
+
+#### Quality Engineer (QE) vs. Quality Manager (QM) Comparison
+
+| Dimension | Quality Engineer (QE) | Quality Manager (QM) |
+| :--- | :--- | :--- |
+| **Scope** | Single-incident deep dive, root-cause validation, technical evidence correlation | Plant-wide quality trends, multi-line risk oversight, executive escalation |
+| **Primary Metric** | Mean Time To Investigate (MTTI), Root Cause Accuracy | Plant First-Pass Yield (FPY), Customer RMA rate, Scrap Cost Reduction |
+| **High-Risk Authority** | Recommends quality holds, signs off on incident investigations | Authorizes high-impact global inventory holds ($100k+), halts production lines |
+
+#### Decision Authority & Permissions
+- **Permissions**: `READ`, `ANALYZE`, `APPROVE_HIGH_RISK_HOLD`, `ESCALATE_INCIDENT`, `REQUEST_AUDIT`.
+
+---
+
+### 4.3 Supplier Quality Engineer (Step 2.7)
+
+#### Role & Function
+The Supplier Quality Engineer (SQE) tracks component lot quality across external vendors, manages incoming inspection standards, and handles Supplier Corrective Action Requests (SCARs).
+
+#### Correlation vs. Evidence vs. Root Cause
+
+```text
+[ Statistical Correlation ] ──► [ Multimodal Evidence ] ──► [ Root-Cause Hypothesis ] ──► [ Confirmed Root Cause ]
+(Lot B-9921 present during      (IPC solderability test      (Component lead oxidation     (QE/SQE physical audit
+ high defect rate)               failure under microscopy)    hypothesis ranked #1)         sign-off & SCAR issuance)
+```
+
+- **Correlation**: Statistical co-occurrence (e.g., component lot present during 80% of defects). *Never sufficient on its own to penalize a vendor*.
+- **Evidence**: Physical or empirical verification (e.g., solderability test under IPC-J-STD-002).
+- **Root-Cause Hypothesis**: Ranked multi-factor hypothesis combining correlation, process telemetry, and lot history.
+- **Confirmed Root Cause**: Human SQE validated finding backed by evidence.
+- **Required Evidence for SCAR Issuance**: Proof excluding internal SMT machine/thermal variables, IPC solderability test report, and historical defect delta.
+
+---
+
+### 4.4 System Administrator (Step 2.8)
+
+#### Role & Function
+The System Administrator maintains platform uptime, identity & access management (RBAC), API keys, MCP server transport bridges, model endpoints, audit log immutability, and system monitoring.
+
+#### Crucial Boundary: Technical Administration ≠ Business Approval Authority
+
+```text
++------------------------------------------+       +------------------------------------------+
+|       SYSTEM ADMINISTRATOR (TECHNICAL)   |       |    QUALITY ENGINEER / MANAGER (BUSINESS) |
++------------------------------------------+       +------------------------------------------+
+| - Manage API keys & JWT secrets          |       | - Approve root-cause hypotheses          |
+| - Configure MCP server connection ports  |       | - Sign off on ISO 9001 incident reports  |
+| - Assign RBAC roles (QE, Operator, etc.) |       | - Place component lots on quality hold   |
+| - Monitor system CPU / RAM / Latency     |       | - Authorize production line restarts     |
++------------------------------------------+       +------------------------------------------+
+```
+
+> **Architectural Rule**: Having root technical privileges to configure software or update database connections does **NOT** grant authorization to sign off on quality investigations or alter manufacturing compliance records. Technical administration and domain business authority are strictly separated.
