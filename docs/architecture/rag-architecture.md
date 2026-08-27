@@ -258,3 +258,103 @@ If the embedding model changes (e.g. upgrading to a newer bge release):
 ### 5.2 Query Construction Strategy
 
 Queries are template-assembled from investigation context fields rather than passed as raw QE text, so that machine IDs and component identifiers are always present:
+
+
+If the QE supplies `free_text_query`, it is appended to the templated query rather than replacing it, so structured context is never lost.
+
+### 5.3 Reranking Decision
+
+| Option | Description | Tradeoff |
+|---|---|---|
+| A — No reranking | Pure vector similarity ranking | Simpler, faster, but dense retrieval alone can rank a loosely-related passage above a precisely relevant one when vocabulary overlap is low |
+| B — Cross-encoder reranker (e.g. `ms-marco-MiniLM-L-6-v2`) | Rescore top dense/hybrid candidates with a query-passage cross-encoder | Meaningfully better precision on short technical passages, modest extra compute on a small candidate set |
+
+**Selected: Option B — cross-encoder reranking.** Because retrieved passages become evidence a QE relies on for root-cause sign-off, precision at the top of the list matters more than raw retrieval speed. Reranking is applied only to the top ~20 fused candidates, keeping compute cost bounded.
+
+### 5.4 Top-k Configuration
+
+- Dense/sparse retrieval candidate pool: top 20 (pre-rerank)
+- Post-rerank passages surfaced to the QE: top 5
+- Historical incident retrieval: top 5 similar incidents shown, ranked by similarity score
+
+### 5.5 Conceptual Module Responsibilities
+
+- `src/forgesight/rag/retrieval/` — owns query construction, dense/sparse retrieval execution, and RRF fusion.
+- `src/forgesight/rag/reranking/` — owns cross-encoder scoring and final top-k selection; consumes retrieval's candidate list, produces the final ranked `RetrievedPassage` list.
+
+### 5.6 Retrieval Interface Contract
+
+**Input:** query string (templated) + investigation context filter (document category, machine ID, active-status-only flag).
+
+**Output:** ordered list of `RetrievedPassage` objects (full schema in Section 6), each with `retrieval_score` and, when reranking is applied, `rerank_score`.
+
+---
+
+## 6. RAG Output Schema & Integration Contract
+
+### 6.1 RetrievedPassage Schema
+
+| Field | Type | Purpose / Trust-Chain Role |
+|---|---|---|
+| `passage_id` | UUID | Unique identifier for this specific retrieval result, referenced in audit events |
+| `incident_id` | UUID | Ties the retrieval back to the investigation it supported |
+| `document_id` | VARCHAR | Identifies the source document for provenance |
+| `document_title` | string | Human-readable source shown to the QE |
+| `document_version` | string | Confirms the QE is viewing the version in effect at retrieval time |
+| `document_date` | date | Supports currency judgment ("is this SOP still current?") |
+| `section_title` | string | Orients the QE within the document |
+| `section_reference` | string | Exact locator (e.g. "Section 4.2, Page 7") for manual verification |
+| `chunk_text` | string | The actual evidence text shown in the workspace |
+| `retrieval_score` | float (0.0–1.0) | Dense/hybrid similarity score, shown to convey retrieval confidence |
+| `rerank_score` | float, nullable | Cross-encoder score when reranking was applied; supersedes `retrieval_score` for display ranking |
+| `retrieval_query` | string | The exact query used, so the QE can judge whether the retrieval context was appropriate |
+| `retrieval_timestamp` | UTC datetime | When retrieval occurred, for audit |
+| `embedding_model` | string | Which model produced the vectors involved, for reproducibility |
+| `retrieved_by` | enum (`rag_pipeline`, `agent`, `direct_search`) | Distinguishes automatic workflow retrieval from an agent-triggered or QE-initiated manual search |
+
+Every field above exists to support the Phase 1 trust/explainability requirement that a QE must be able to trace any AI-surfaced evidence back to an authoritative, versioned source — never an opaque or unverifiable claim.
+
+### 6.2 Integration Contract
+
+| Layer | Role |
+|---|---|
+| **FastAPI layer** | Exposes a retrieval endpoint invoked at Stage 7 (SOP retrieval) and Stage 9 (historical incident retrieval); accepts investigation context, returns ranked `RetrievedPassage` list |
+| **Investigation Workflow** | At Stage 7, retrieved passages are attached to the incident record as evidence items; at Stage 9, historical incidents feed into hypothesis ranking as precedent evidence |
+| **Database** | `document_chunks` and `incident_embeddings` are persisted; individual `RetrievedPassage` results are computed at query time and NOT persisted as a separate table — only the fact that a retrieval occurred, and which passages were surfaced, is recorded in `AuditEvent` |
+| **Investigation Workspace UI** | Displays passage text, document title/version, section reference, and score; does not display raw embedding vectors or hidden reasoning |
+| **Root-Cause Hypothesis Generation** | Retrieved SOP passages and similar historical incidents are supplied as grounding context; the hypothesis ranking step must cite which passages/incidents supported each hypothesis (see `evidence_provenance_references` in Phase 2 trust schema) |
+
+### 6.3 Historical Incident Retrieval Output Schema
+
+| Field | Type | Description |
+|---|---|---|
+| `incident_id` | UUID | Retrieved historical incident |
+| `title` | string | Short incident description |
+| `defect_type` | string | e.g. "component misalignment" |
+| `root_cause_confirmed` | string | Human-validated root cause from that closed incident |
+| `corrective_action_taken` | string | Action taken previously |
+| `similarity_score` | float (0.0–1.0) | Semantic similarity to the current incident |
+| `retrieval_timestamp` | UTC datetime | When this comparison was retrieved |
+
+---
+
+## 7. RAG Evaluation Strategy
+
+### 7.1 Three Evaluation Levels
+
+**1. Retrieval Evaluation (component-level)**
+- Metrics: Precision@k, Recall@k, NDCG@k, MRR
+- Requires a labeled set of (query, relevant document/section) pairs, built by hand from the five synthetic SOPs — for each SOP section, a QE-style question is authored whose known correct answer is that section.
+
+**2. End-to-End RAG Evaluation**
+- Metrics: Answer faithfulness (is the generated answer grounded only in retrieved passages?) and Answer relevance (does it address the investigation question?)
+- Tool: RAGAS framework, described conceptually only — used to compute faithfulness/relevance scores against the golden dataset; no implementation in this phase.
+
+**3. Human Evaluation**
+- Captured via thumbs-up/down feedback on each retrieved passage in the Investigation Workspace UI.
+- Feedback maps to a `human_reviewed` field on the corresponding audit/evidence record, feeding future retrieval tuning.
+
+### 7.2 Evaluation Dataset Strategy
+
+- A synthetic **golden dataset** of 20 investigation questions is authored, each mapped to the SOP document(s)/section(s) that should be retrieved.
+- Format:
