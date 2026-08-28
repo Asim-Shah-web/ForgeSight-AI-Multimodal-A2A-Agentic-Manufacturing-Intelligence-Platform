@@ -112,7 +112,7 @@ Full content for each is provided as separate files below (Section 2.3 lists str
 3. **Chunking** — document is split into retrievable units per the strategy in 3.2.
 4. **Embedding** — each chunk is vectorized (Section 4).
 5. **Indexing** — chunk text + embedding + metadata are stored in the `document_chunks` pgvector table.
-6. **Verification** — an ingestion job confirms: chunk count matches expected section count, embedding dimension matches `vector(N)`, and no chunk is missing required metadata (title, version, section reference).
+6. **Verification** — an ingestion job confirms: chunk count matches expected section count, embedding dimension matches `vector(1024)`, and no chunk is missing required metadata (title, version, section reference).
 
 ### 3.2 Chunking Strategy Evaluation
 
@@ -358,3 +358,26 @@ Every field above exists to support the Phase 1 trust/explainability requirement
 
 - A synthetic **golden dataset** of 20 investigation questions is authored, each mapped to the SOP document(s)/section(s) that should be retrieved.
 - Format:
+{
+"query": "What is the placement tolerance for a 10µF capacitor under IPC-A-610 Class 3?",
+"expected_documents": ["SOP-QUAL-042"],
+"expected_sections": ["Section 4.2 - Acceptance Criteria"]
+}
+
+- Stored at `data/evaluation/rag_golden_dataset.json`.
+
+### 7.3 Evaluation Script Strategy (Conceptual)
+
+`scripts/evaluate_rag.py` — conceptually: loads the golden dataset, runs each query through the retrieval pipeline, computes Precision@k/NDCG@k against `expected_documents`/`expected_sections`, and writes a results CSV. No implementation in this phase.
+
+### 7.4 Hallucination Risk & Mitigation (Mandatory)
+
+- Every claim surfaced to a QE as AI-generated reasoning must cite a `RetrievedPassage`.
+- If no retrieved passage clears the minimum relevance threshold, the system must respond "No relevant document found" — it must never fabricate a citation or section reference.
+- This is a hard, non-negotiable rule consistent with the Phase 1 trust and explainability requirements and the Section 1.3 "what must not be retrieved" boundary.
+
+### 7.5 Downstream Phase Dependency
+
+Phase 4 deliverables — chunked/embedded SOPs, historical incident embeddings, and the `RetrievedPassage` contract — become the structured evidence inputs that:
+- **Phase 5 (MCP)** tools reference when a QE or agent requests document evidence through a standardized tool call, and
+- **Phase 6 (Agent Architecture)** agents reason over when generating root-cause hypotheses and corrective action recommendations, always subject to the citation-or-abstain rule above.
