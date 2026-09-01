@@ -42,3 +42,5 @@ No document tool in this server can create, modify, or retire a document — doc
 ## Status
 
 Specification only — no server implementation exists yet in this phase.
+
+
