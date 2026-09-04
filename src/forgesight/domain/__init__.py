@@ -1,1 +1,1 @@
-"""Domain models package."""
+"""Domain package: SQLModel table models representing the ForgeSight schema."""
