@@ -2415,7 +2415,7 @@ You will have learned the **architecture, protocol thinking, distributed-agent c
 ---
 
 # 51. Immediate Next Step
-
+####
 Do not start coding the full system yet.
 
 Start with:
@@ -2441,3 +2441,60 @@ Build the non-agent CV baseline
 Only after the baseline exists should the A2A learning sequence begin.
 
 The project should grow organically so that each A2A abstraction solves a problem you have actually encountered while building ForgeSight.
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forgesight"
+version = "0.1.0"
+description = "A2A-Powered Multimodal Manufacturing Intelligence Platform"
+readme = "README.md"
+authors = [{ name = "Asim Shah" }]
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.28.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "httpx>=0.27.0",
+    "jinja2>=3.1.3",
+    "python-multipart>=0.0.9",
+    "pyyaml>=6.0.1",
+]
+
+[project.optional-dependencies]
+ai = [
+    "langgraph>=0.0.30",
+    "langchain-core>=0.1.30",
+    "google-adk>=0.1.0",
+    "mcp>=0.1.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.5",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.3.0",
+    "black>=24.2.0",
+    "mypy>=1.8.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+#####
