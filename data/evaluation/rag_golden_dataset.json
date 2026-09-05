@@ -1,0 +1,102 @@
+[
+  {
+    "query": "What is the placement tolerance for a 10uF capacitor under IPC-A-610 Class 3?",
+    "expected_documents": ["SOP-QUAL-042"],
+    "expected_sections": ["Section 4.2"]
+  },
+  {
+    "query": "What should I check before running an AOI scan for placement alignment?",
+    "expected_documents": ["SOP-QUAL-042"],
+    "expected_sections": ["Section 4.1"]
+  },
+  {
+    "query": "What are the steps to inspect a flagged component during AOI scanning?",
+    "expected_documents": ["SOP-QUAL-042"],
+    "expected_sections": ["Section 4.3"]
+  },
+  {
+    "query": "When should a board be rejected or sent to rework for a placement misalignment defect?",
+    "expected_documents": ["SOP-QUAL-042"],
+    "expected_sections": ["Section 5"]
+  },
+  {
+    "query": "What defect frequency triggers escalation to incident creation for misalignment defects?",
+    "expected_documents": ["SOP-QUAL-042"],
+    "expected_sections": ["Section 4.3"]
+  },
+  {
+    "query": "What is the wear threshold that requires nozzle replacement within 24 hours?",
+    "expected_documents": ["SOP-MAINT-017"],
+    "expected_sections": ["Section 4"]
+  },
+  {
+    "query": "How do I inspect a placer nozzle for wear?",
+    "expected_documents": ["SOP-MAINT-017"],
+    "expected_sections": ["Section 5"]
+  },
+  {
+    "query": "What is the procedure for replacing a worn nozzle on a placer machine?",
+    "expected_documents": ["SOP-MAINT-017"],
+    "expected_sections": ["Section 6"]
+  },
+  {
+    "query": "How many days without cleaning is considered a maintenance non-compliance flag for a nozzle?",
+    "expected_documents": ["SOP-MAINT-017"],
+    "expected_sections": ["Section 4"]
+  },
+  {
+    "query": "What is the target temperature range for the reflow oven Zone 3?",
+    "expected_documents": ["SOP-PROC-031"],
+    "expected_sections": ["Section 4"]
+  },
+  {
+    "query": "How is the reflow thermal profile verified before production?",
+    "expected_documents": ["SOP-PROC-031"],
+    "expected_sections": ["Section 5"]
+  },
+  {
+    "query": "What counts as a reflow temperature deviation on the production line?",
+    "expected_documents": ["SOP-PROC-031"],
+    "expected_sections": ["Section 4"]
+  },
+  {
+    "query": "What should happen if a reflow oven zone falls outside its acceptable range during production?",
+    "expected_documents": ["SOP-PROC-031"],
+    "expected_sections": ["Section 5"]
+  },
+  {
+    "query": "What sample size is required for an incoming lot of 1500 units?",
+    "expected_documents": ["SOP-SUPP-008"],
+    "expected_sections": ["Section 4"]
+  },
+  {
+    "query": "What are the criteria for rejecting an incoming component lot?",
+    "expected_documents": ["SOP-SUPP-008"],
+    "expected_sections": ["Section 5"]
+  },
+  {
+    "query": "Can a component lot be blamed for a defect based on statistical correlation alone?",
+    "expected_documents": ["SOP-SUPP-008"],
+    "expected_sections": ["Section 6"]
+  },
+  {
+    "query": "Who is authorized to approve a Supplier Corrective Action Request?",
+    "expected_documents": ["SOP-SUPP-008"],
+    "expected_sections": ["Section 6"]
+  },
+  {
+    "query": "What conditions trigger a batch quality hold?",
+    "expected_documents": ["SOP-QUAL-055"],
+    "expected_sections": ["Section 4"]
+  },
+  {
+    "query": "What are the steps to contain a batch once it is placed on quality hold?",
+    "expected_documents": ["SOP-QUAL-055"],
+    "expected_sections": ["Section 5"]
+  },
+  {
+    "query": "What disposition options are available for a batch under quality hold?",
+    "expected_documents": ["SOP-QUAL-055"],
+    "expected_sections": ["Section 6"]
+  }
+]
