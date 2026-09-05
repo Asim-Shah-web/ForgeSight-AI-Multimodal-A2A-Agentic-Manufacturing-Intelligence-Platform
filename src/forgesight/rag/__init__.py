@@ -1,1 +1,1 @@
-"""RAG package."""
+"""RAG subsystem: chunking, embeddings, reranking, ingestion, retrieval."""
