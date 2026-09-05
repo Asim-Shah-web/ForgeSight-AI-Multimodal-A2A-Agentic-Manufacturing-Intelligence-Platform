@@ -1,1 +1,1 @@
-"""Routes package."""
+"""API route modules: auth, incidents, users, health."""

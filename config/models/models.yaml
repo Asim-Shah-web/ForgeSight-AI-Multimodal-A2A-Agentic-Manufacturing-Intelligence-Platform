@@ -1,0 +1,10 @@
+# ForgeSight AI - Model configuration (Phase 4 ADR-005)
+embedding:
+  model_name: BAAI/bge-large-en-v1.5
+  dimension: 1024
+  device: cpu
+  batch_size: 32
+
+reranker:
+  model_name: cross-encoder/ms-marco-MiniLM-L-6-v2
+  device: cpu

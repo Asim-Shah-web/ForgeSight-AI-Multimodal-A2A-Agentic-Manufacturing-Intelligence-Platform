@@ -1,1 +1,1 @@
-"""FastAPI API package."""
+"""API package: FastAPI app, routes, schemas, security, dependencies."""

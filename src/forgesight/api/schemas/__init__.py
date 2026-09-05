@@ -1,1 +1,1 @@
-"""API schemas package."""
+"""API request/response Pydantic schemas (never SQLModel table models)."""
