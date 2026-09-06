@@ -166,5 +166,6 @@ async def test_inspect_creates_cv_execution_and_evidence_audit_events(
                 AuditEvent.what == AuditEventType.EVIDENCE_SUBMITTED,
             )
         )
+        # 
         assert len(cv_result.scalars().all()) >= 1
         assert len(evidence_result.scalars().all()) >= 1
