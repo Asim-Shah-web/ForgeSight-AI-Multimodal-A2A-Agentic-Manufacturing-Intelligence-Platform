@@ -3,7 +3,8 @@ Idempotent synthetic data seeder for ForgeSight AI.
 
 Seeds users, products, lines, machines, nozzles, suppliers, component lots,
 batches, boards, maintenance records, one complete incident
-(INCIDENT-2026-00421), and production telemetry, per Phase 2's synthetic
+(INCIDENT-2026-00421), production telemetry, and (Phase 9) one inspection
+image with CvFinding rows for that incident's board, per Phase 2's synthetic
 data strategy and dependency order.
 
 Usage:
@@ -17,14 +18,18 @@ duplicates.
 from __future__ import annotations
 
 import asyncio
+import random
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
+from PIL import Image, ImageDraw
 from sqlmodel import select
 
 from forgesight.api.security import hash_password
 from forgesight.config.database import session_scope, create_db_and_tables
 from forgesight.config.logging import get_logger
+from forgesight.domain.models.inspection import CvFinding
 from forgesight.domain.models.investigation import Incident, IncidentStatus
 from forgesight.domain.models.maintenance import MaintenanceRecord
 from forgesight.domain.models.manufacturing import (
@@ -39,6 +44,7 @@ from forgesight.domain.models.manufacturing import (
 from forgesight.domain.models.supply_chain import Component, ComponentLot, Supplier
 from forgesight.domain.models.telemetry import ProductionTelemetry
 from forgesight.domain.models.users import User, UserRole
+from forgesight.vision.service import process_inspection_image
 
 logger = get_logger(__name__)
 
@@ -173,7 +179,6 @@ async def seed_batches_and_boards(session) -> str:
     target_batch_id = "B-24017"
 
     batch_specs = [(f"B-2401{i}", "ECU-2026" if i % 2 == 0 else "BCM-2025", "SMT-LINE-03" if i % 2 == 0 else "SMT-LINE-04") for i in range(10)]
-    # Force the batch referenced by the seeded incident to exist explicitly.
     batch_specs[7] = (target_batch_id, "ECU-2026", "SMT-LINE-03")
 
     board_counter = 0
@@ -225,8 +230,6 @@ async def seed_maintenance_records(session) -> None:
         ("PLACER-07", "NZ-07-03", now - timedelta(days=47), 0.06, "pass", "clean_recommended"),
     ]
     for machine_id, nozzle_id, last_cleaned, wear_mm, vacuum_result, disposition in records:
-        # Idempotency check: skip if an identical record already exists for
-        # this machine/nozzle/last_cleaned combination.
         result = await session.execute(
             select(MaintenanceRecord).where(
                 MaintenanceRecord.machine_id == machine_id,
@@ -299,6 +302,73 @@ async def seed_telemetry(session) -> None:
             await session.flush()
 
 
+def _generate_fallback_fixture_image_bytes() -> bytes:
+    """
+    Generates a single synthetic board-like JPEG in memory, matching the
+    style of scripts/generate_synthetic_vision_dataset.py, for seeders run
+    in environments where the full synthetic dataset directory hasn't been
+    generated. This keeps the seeder self-contained.
+    """
+    image = Image.new("RGB", (640, 640), color=(40, 90, 50))
+    draw = ImageDraw.Draw(image)
+    for _ in range(20):
+        w, h = random.randint(20, 60), random.randint(10, 30)
+        x = random.randint(10, 640 - w - 10)
+        y = random.randint(10, 640 - h - 10)
+        draw.rectangle([x, y, x + w, y + h], outline=(180, 180, 180), width=2)
+    draw.rectangle([300, 300, 360, 340], outline=(220, 30, 30), width=3)
+
+    import io
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=90)
+    return buffer.getvalue()
+
+
+async def seed_inspection_evidence(session, board_id: str) -> None:
+    """
+    Phase 9 Step 9.5: attach one inspection image (and whatever CvFindings
+    the configured model produces above threshold) to the seeded incident's
+    board, so the Stage 3 evidence trail exists out of the box.
+
+    Idempotent: skipped if CvFinding rows already exist for this board.
+    """
+    existing_result = await session.execute(select(CvFinding).where(CvFinding.board_id == board_id))
+    if existing_result.scalars().first() is not None:
+        logger.info("seed_inspection_evidence_skipped_already_present", extra={"board_id": board_id})
+        return
+
+    synthetic_sample_dir = Path("data/vision/synthetic_dataset/images/val")
+    sample_images = list(synthetic_sample_dir.glob("*.jpg")) if synthetic_sample_dir.exists() else []
+
+    if sample_images:
+        file_bytes = sample_images[0].read_bytes()
+    else:
+        logger.info(
+            "seed_inspection_evidence_using_inline_fallback_image",
+            extra={"reason": "synthetic dataset directory not found; generating one image inline"},
+        )
+        file_bytes = _generate_fallback_fixture_image_bytes()
+
+    try:
+        _inspection_image, cv_findings = await process_inspection_image(
+            session, board_id=board_id, file_bytes=file_bytes, content_type="image/jpeg", station_id="AOI-03"
+        )
+        logger.info(
+            "seed_inspection_evidence_created",
+            extra={"board_id": board_id, "findings_count": len(cv_findings)},
+        )
+    except Exception:
+        # A missing/untrained checkpoint must not abort the whole seeder run —
+        # the rest of the seeded data (users, incident, telemetry, etc.) is
+        # still valid and useful without vision evidence attached.
+        logger.warning(
+            "seed_inspection_evidence_skipped_due_to_error",
+            exc_info=True,
+            extra={"board_id": board_id},
+        )
+
+
 async def main() -> None:
     logger.info("seed_database_starting")
     await create_db_and_tables()
@@ -312,6 +382,7 @@ async def main() -> None:
         await seed_maintenance_records(session)
         await seed_incident(session, target_board_id, users[UserRole.PRODUCTION_OPERATOR])
         await seed_telemetry(session)
+        await seed_inspection_evidence(session, target_board_id)
 
     logger.info("seed_database_complete")
 
