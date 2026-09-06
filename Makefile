@@ -23,3 +23,6 @@ dev-backend:
 
 dev-frontend:
 	cd frontend/forgesight-web && npm run dev
+
+
+

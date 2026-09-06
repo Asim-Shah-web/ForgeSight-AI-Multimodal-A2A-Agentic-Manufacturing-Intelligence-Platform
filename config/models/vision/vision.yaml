@@ -1,0 +1,35 @@
+# ForgeSight AI - Computer Vision configuration (Phase 3 ADR-004)
+model:
+  checkpoint_path: models/vision/checkpoints/yolov8-forgesight-synthetic-v1.pt
+  model_name: yolov8-forgesight
+  model_version: synthetic-v1
+  dataset_used_for_training: "synthetic-placeholder-v1 (not for production use)"
+  device: cpu
+  image_size: 640
+
+inference:
+  confidence_threshold: 0.5
+  iou_threshold: 0.45
+  max_detections_per_image: 50
+
+upload:
+  max_file_size_mb: 10
+  allowed_mime_types:
+    - image/jpeg
+    - image/png
+  storage_dir: data/images/uploaded
+
+defect_classes:
+  - insufficient_solder_paste
+  - excessive_solder_paste
+  - solder_paste_bridging
+  - component_misalignment
+  - missing_component
+  - tombstoning
+  - polarity_inversion
+  - wrong_component
+  - cold_solder_joint
+  - solder_bridging
+  - solder_balling
+  - solder_voids
+  - head_in_pillow

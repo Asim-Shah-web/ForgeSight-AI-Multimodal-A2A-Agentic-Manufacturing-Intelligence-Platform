@@ -1,6 +1,7 @@
 """
 Application settings loaded from environment variables, .env file, and
-declarative YAML configuration under config/ (Phase 8 Step 8.0).
+declarative YAML configuration under config/ (Phase 8 Step 8.0, extended in
+Phase 9 Step 9.0 for vision config).
 
 Precedence, highest to lowest:
     1. Environment variable (e.g. EMBEDDING_MODEL_NAME=...)
@@ -9,8 +10,8 @@ Precedence, highest to lowest:
 
 This is the single source of truth for configuration. No hardcoded secrets
 are permitted anywhere else in the codebase — every piece of configuration
-(DB URL, Redis URL, JWT secret, MCP endpoints, model names, RAG parameters)
-must flow through this module.
+(DB URL, Redis URL, JWT secret, MCP endpoints, model names, RAG parameters,
+vision/CV parameters) must flow through this module.
 """
 
 from __future__ import annotations
@@ -35,9 +36,9 @@ def load_yaml_config(path: Path, model: type[T]) -> T:
     """
     Load a YAML file into the given Pydantic model. If the file does not
     exist, returns the model's own defaults rather than raising — this
-    keeps the application bootable (e.g. in a pip-installed package or a
-    test environment) even when the config/ tree isn't present alongside
-    the code, falling back to the hardcoded defaults on each config model.
+    keeps the application bootable even when the config/ tree isn't present
+    alongside the code, falling back to the hardcoded defaults on each
+    config model.
     """
     if not path.exists():
         return model()
@@ -47,7 +48,7 @@ def load_yaml_config(path: Path, model: type[T]) -> T:
 
 
 # ---------------------------------------------------------------------------
-# Declarative config models (config/models/models.yaml, config/rag/rag.yaml)
+# Declarative config models: config/models/models.yaml, config/rag/rag.yaml
 # ---------------------------------------------------------------------------
 
 class EmbeddingConfig(BaseModel):
@@ -84,15 +85,67 @@ class RagConfig(BaseModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
 
 
+# ---------------------------------------------------------------------------
+# Declarative config models: config/vision/vision.yaml (Phase 9 Step 9.0)
+# ---------------------------------------------------------------------------
+
+class VisionModelConfig(BaseModel):
+    checkpoint_path: str = "models/vision/checkpoints/yolov8-forgesight-synthetic-v1.pt"
+    model_name: str = "yolov8-forgesight"
+    model_version: str = "synthetic-v1"
+    dataset_used_for_training: str = "synthetic-placeholder-v1 (not for production use)"
+    device: str = "cpu"
+    image_size: int = 640
+
+
+class VisionInferenceConfig(BaseModel):
+    confidence_threshold: float = 0.5
+    iou_threshold: float = 0.45
+    max_detections_per_image: int = 50
+
+
+class VisionUploadConfig(BaseModel):
+    max_file_size_mb: int = 10
+    allowed_mime_types: list[str] = Field(default_factory=lambda: ["image/jpeg", "image/png"])
+    storage_dir: str = "data/images/uploaded"
+
+
+class VisionConfig(BaseModel):
+    model: VisionModelConfig = Field(default_factory=VisionModelConfig)
+    inference: VisionInferenceConfig = Field(default_factory=VisionInferenceConfig)
+    upload: VisionUploadConfig = Field(default_factory=VisionUploadConfig)
+    defect_classes: list[str] = Field(
+        default_factory=lambda: [
+            "insufficient_solder_paste",
+            "excessive_solder_paste",
+            "solder_paste_bridging",
+            "component_misalignment",
+            "missing_component",
+            "tombstoning",
+            "polarity_inversion",
+            "wrong_component",
+            "cold_solder_joint",
+            "solder_bridging",
+            "solder_balling",
+            "solder_voids",
+            "head_in_pillow",
+        ]
+    )
+
+
 _MODELS_YAML_PATH = Path(
     os.environ.get("FORGESIGHT_MODELS_CONFIG_PATH", str(_DEFAULT_CONFIG_DIR / "models" / "models.yaml"))
 )
 _RAG_YAML_PATH = Path(
     os.environ.get("FORGESIGHT_RAG_CONFIG_PATH", str(_DEFAULT_CONFIG_DIR / "rag" / "rag.yaml"))
 )
+_VISION_YAML_PATH = Path(
+    os.environ.get("FORGESIGHT_VISION_CONFIG_PATH", str(_DEFAULT_CONFIG_DIR / "vision" / "vision.yaml"))
+)
 
 _yaml_models = load_yaml_config(_MODELS_YAML_PATH, ModelsConfig)
 _yaml_rag = load_yaml_config(_RAG_YAML_PATH, RagConfig)
+_yaml_vision = load_yaml_config(_VISION_YAML_PATH, VisionConfig)
 
 
 class Settings(BaseSettings):
@@ -118,14 +171,29 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480  # 8 hours, per SEC-005
 
-    # CV Model (Phase 3)
-    cv_model_path: str = "models/vision/checkpoints/yolov8-forgesight.pt"
-    cv_confidence_threshold: float = 0.5
-
-    # RAG / Embeddings (Phase 4 ADR-005, Phase 8 Step 8.0)
+    # CV Model (Phase 3/7, Phase 9 Step 9.0 nested config)
     # These flat fields remain the primary, backward-compatible, env-overridable
     # interface established in Phase 7. Their defaults are now sourced from the
     # declarative YAML config rather than being hardcoded literals.
+    cv_model_path: str = _yaml_vision.model.checkpoint_path
+    cv_model_name: str = _yaml_vision.model.model_name
+    cv_model_version: str = _yaml_vision.model.model_version
+    cv_dataset_used_for_training: str = _yaml_vision.model.dataset_used_for_training
+    cv_device: str = _yaml_vision.model.device
+    cv_image_size: int = _yaml_vision.model.image_size
+
+    cv_confidence_threshold: float = _yaml_vision.inference.confidence_threshold
+    cv_iou_threshold: float = _yaml_vision.inference.iou_threshold
+    cv_max_detections_per_image: int = _yaml_vision.inference.max_detections_per_image
+
+    cv_upload_max_size_mb: int = _yaml_vision.upload.max_file_size_mb
+    cv_upload_allowed_mime_types: list[str] = Field(
+        default_factory=lambda: list(_yaml_vision.upload.allowed_mime_types)
+    )
+    cv_upload_storage_dir: str = _yaml_vision.upload.storage_dir
+    cv_defect_classes: list[str] = Field(default_factory=lambda: list(_yaml_vision.defect_classes))
+
+    # RAG / Embeddings (Phase 4 ADR-005, Phase 8 Step 8.0)
     embedding_model_name: str = _yaml_models.embedding.model_name
     embedding_dimension: int = _yaml_models.embedding.dimension
     embedding_device: str = _yaml_models.embedding.device
@@ -145,6 +213,7 @@ class Settings(BaseSettings):
     # fields above after validation — see _sync_nested_config_from_flat_fields).
     rag: RagConfig = Field(default_factory=lambda: _yaml_rag.model_copy(deep=True))
     models: ModelsConfig = Field(default_factory=lambda: _yaml_models.model_copy(deep=True))
+    vision: VisionConfig = Field(default_factory=lambda: _yaml_vision.model_copy(deep=True))
 
     # MCP (Phase 5)
     mcp_manufacturing_server_url: str = Field(...)
@@ -172,10 +241,9 @@ class Settings(BaseSettings):
         """
         The flat fields above are the authoritative, env-overridable values
         (Phase 7 backward compatibility). After validation, mirror them into
-        the nested RagConfig/ModelsConfig objects so callers that prefer
-        structured access (settings.models.embedding.dimension,
-        settings.rag.retrieval.top_k, ...) always see the same, single
-        resolved configuration — never a stale YAML-only value.
+        the nested RagConfig/ModelsConfig/VisionConfig objects so callers that
+        prefer structured access always see the same, single resolved
+        configuration — never a stale YAML-only value.
         """
         self.models.embedding.model_name = self.embedding_model_name
         self.models.embedding.dimension = self.embedding_dimension
@@ -190,6 +258,20 @@ class Settings(BaseSettings):
         self.rag.retrieval.rerank_top_k = self.rag_rerank_top_k
         self.rag.retrieval.min_relevance_score = self.rag_min_relevance_score
         self.rag.retrieval.hybrid_fusion_enabled = self.rag_hybrid_fusion_enabled
+
+        self.vision.model.checkpoint_path = self.cv_model_path
+        self.vision.model.model_name = self.cv_model_name
+        self.vision.model.model_version = self.cv_model_version
+        self.vision.model.dataset_used_for_training = self.cv_dataset_used_for_training
+        self.vision.model.device = self.cv_device
+        self.vision.model.image_size = self.cv_image_size
+        self.vision.inference.confidence_threshold = self.cv_confidence_threshold
+        self.vision.inference.iou_threshold = self.cv_iou_threshold
+        self.vision.inference.max_detections_per_image = self.cv_max_detections_per_image
+        self.vision.upload.max_file_size_mb = self.cv_upload_max_size_mb
+        self.vision.upload.allowed_mime_types = list(self.cv_upload_allowed_mime_types)
+        self.vision.upload.storage_dir = self.cv_upload_storage_dir
+        self.vision.defect_classes = list(self.cv_defect_classes)
         return self
 
     @property
