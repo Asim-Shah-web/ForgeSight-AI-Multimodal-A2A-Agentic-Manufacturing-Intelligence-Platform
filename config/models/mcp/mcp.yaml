@@ -1,0 +1,16 @@
+# ForgeSight AI - MCP server configuration (Phase 5 architecture, Phase 10 implementation)
+manufacturing_server:
+  name: forgesight-manufacturing
+  transport: stdio # stdio | http
+  http_host: 0.0.0.0
+  http_port: 9001
+
+documents_server:
+  name: forgesight-documents
+  transport: stdio
+  http_host: 0.0.0.0
+  http_port: 9002
+
+tool_execution:
+  timeout_seconds: 30
+  max_retries: 2

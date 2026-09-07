@@ -26,6 +26,7 @@ from forgesight.config.settings import settings
 import forgesight.domain.models  # noqa: F401
 
 from forgesight.api.routes import auth as auth_routes
+from forgesight.api.routes import documents as documents_routes
 from forgesight.api.routes import health as health_routes
 from forgesight.api.routes import incidents as incidents_routes
 from forgesight.api.routes import users as users_routes
@@ -43,6 +44,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "app_name": settings.app_name,
             "app_version": settings.app_version,
             "debug": settings.debug,
+            "embedding_model": settings.embedding_model_name,
+            "reranker_model": settings.reranker_model_name,
         },
     )
 
@@ -154,3 +157,4 @@ app.include_router(auth_routes.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(incidents_routes.router, prefix="/api/v1/incidents", tags=["incidents"])
 app.include_router(users_routes.router, prefix="/api/v1/users", tags=["users"])
 app.include_router(health_routes.router, prefix="/api/v1/health", tags=["health"])
+app.include_router(documents_routes.router, prefix="/api/v1/documents", tags=["documents"])

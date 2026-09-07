@@ -68,3 +68,21 @@ uvicorn forgesight.api.main:app --reload
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+
+
+<!-- 
+
+# 1. Only Postgres + Redis in Docker (~300 MB total)
+docker compose up -d db redis
+
+# 2. Everything else runs natively on your laptop
+pip install -e ".[dev]"
+cp .env.example .env   # then edit DATABASE_URL/REDIS_URL to localhost, fill secret_key
+
+alembic upgrade head
+python scripts/ingest_documents.py
+python scripts/generate_synthetic_vision_dataset.py --num-images 200
+# → run the notebook to produce the checkpoint
+python scripts/seed_database.py
+uvicorn forgesight.api.main:app --reload -->

@@ -1,1 +1,1 @@
-"""Vision package."""
+"""Computer vision subsystem: YOLOv8 inference, image storage, evidence generation."""

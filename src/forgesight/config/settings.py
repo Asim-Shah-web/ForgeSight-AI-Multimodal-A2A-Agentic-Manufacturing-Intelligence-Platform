@@ -1,7 +1,6 @@
 """
 Application settings loaded from environment variables, .env file, and
-declarative YAML configuration under config/ (Phase 8 Step 8.0, extended in
-Phase 9 Step 9.0 for vision config).
+declarative YAML configuration under config/.
 
 Precedence, highest to lowest:
     1. Environment variable (e.g. EMBEDDING_MODEL_NAME=...)
@@ -9,9 +8,7 @@ Precedence, highest to lowest:
     3. Hardcoded fallback default on the Pydantic model
 
 This is the single source of truth for configuration. No hardcoded secrets
-are permitted anywhere else in the codebase — every piece of configuration
-(DB URL, Redis URL, JWT secret, MCP endpoints, model names, RAG parameters,
-vision/CV parameters) must flow through this module.
+are permitted anywhere else in the codebase.
 """
 
 from __future__ import annotations
@@ -35,10 +32,7 @@ _DEFAULT_CONFIG_DIR = _REPO_ROOT / "config"
 def load_yaml_config(path: Path, model: type[T]) -> T:
     """
     Load a YAML file into the given Pydantic model. If the file does not
-    exist, returns the model's own defaults rather than raising — this
-    keeps the application bootable even when the config/ tree isn't present
-    alongside the code, falling back to the hardcoded defaults on each
-    config model.
+    exist, returns the model's own defaults rather than raising.
     """
     if not path.exists():
         return model()
@@ -48,7 +42,7 @@ def load_yaml_config(path: Path, model: type[T]) -> T:
 
 
 # ---------------------------------------------------------------------------
-# Declarative config models: config/models/models.yaml, config/rag/rag.yaml
+# config/models/models.yaml, config/rag/rag.yaml (Phase 8)
 # ---------------------------------------------------------------------------
 
 class EmbeddingConfig(BaseModel):
@@ -86,7 +80,7 @@ class RagConfig(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Declarative config models: config/vision/vision.yaml (Phase 9 Step 9.0)
+# config/vision/vision.yaml (Phase 9)
 # ---------------------------------------------------------------------------
 
 class VisionModelConfig(BaseModel):
@@ -133,6 +127,32 @@ class VisionConfig(BaseModel):
     )
 
 
+# ---------------------------------------------------------------------------
+# config/mcp/mcp.yaml (Phase 10)
+# ---------------------------------------------------------------------------
+
+class McpServerConfig(BaseModel):
+    name: str = "forgesight-mcp-server"
+    transport: str = "stdio"  # "stdio" | "http"
+    http_host: str = "0.0.0.0"
+    http_port: int = 9000
+
+
+class McpToolExecutionConfig(BaseModel):
+    timeout_seconds: int = 30
+    max_retries: int = 2
+
+
+class McpConfig(BaseModel):
+    manufacturing_server: McpServerConfig = Field(
+        default_factory=lambda: McpServerConfig(name="forgesight-manufacturing", http_port=9001)
+    )
+    documents_server: McpServerConfig = Field(
+        default_factory=lambda: McpServerConfig(name="forgesight-documents", http_port=9002)
+    )
+    tool_execution: McpToolExecutionConfig = Field(default_factory=McpToolExecutionConfig)
+
+
 _MODELS_YAML_PATH = Path(
     os.environ.get("FORGESIGHT_MODELS_CONFIG_PATH", str(_DEFAULT_CONFIG_DIR / "models" / "models.yaml"))
 )
@@ -142,10 +162,14 @@ _RAG_YAML_PATH = Path(
 _VISION_YAML_PATH = Path(
     os.environ.get("FORGESIGHT_VISION_CONFIG_PATH", str(_DEFAULT_CONFIG_DIR / "vision" / "vision.yaml"))
 )
+_MCP_YAML_PATH = Path(
+    os.environ.get("FORGESIGHT_MCP_CONFIG_PATH", str(_DEFAULT_CONFIG_DIR / "mcp" / "mcp.yaml"))
+)
 
 _yaml_models = load_yaml_config(_MODELS_YAML_PATH, ModelsConfig)
 _yaml_rag = load_yaml_config(_RAG_YAML_PATH, RagConfig)
 _yaml_vision = load_yaml_config(_VISION_YAML_PATH, VisionConfig)
+_yaml_mcp = load_yaml_config(_MCP_YAML_PATH, McpConfig)
 
 
 class Settings(BaseSettings):
@@ -171,10 +195,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 480  # 8 hours, per SEC-005
 
-    # CV Model (Phase 3/7, Phase 9 Step 9.0 nested config)
-    # These flat fields remain the primary, backward-compatible, env-overridable
-    # interface established in Phase 7. Their defaults are now sourced from the
-    # declarative YAML config rather than being hardcoded literals.
+    # CV Model (Phase 3/7/9)
     cv_model_path: str = _yaml_vision.model.checkpoint_path
     cv_model_name: str = _yaml_vision.model.model_name
     cv_model_version: str = _yaml_vision.model.model_version
@@ -193,7 +214,7 @@ class Settings(BaseSettings):
     cv_upload_storage_dir: str = _yaml_vision.upload.storage_dir
     cv_defect_classes: list[str] = Field(default_factory=lambda: list(_yaml_vision.defect_classes))
 
-    # RAG / Embeddings (Phase 4 ADR-005, Phase 8 Step 8.0)
+    # RAG / Embeddings (Phase 4/8)
     embedding_model_name: str = _yaml_models.embedding.model_name
     embedding_dimension: int = _yaml_models.embedding.dimension
     embedding_device: str = _yaml_models.embedding.device
@@ -209,15 +230,26 @@ class Settings(BaseSettings):
     rag_min_relevance_score: float = _yaml_rag.retrieval.min_relevance_score
     rag_hybrid_fusion_enabled: bool = _yaml_rag.retrieval.hybrid_fusion_enabled
 
-    # Structured, nested access to the same configuration (mirrors the flat
-    # fields above after validation — see _sync_nested_config_from_flat_fields).
+    # MCP (Phase 5/10)
+    mcp_manufacturing_server_url: str = Field(...)
+    mcp_documents_server_url: str = Field(...)
+
+    mcp_manufacturing_transport: str = _yaml_mcp.manufacturing_server.transport
+    mcp_manufacturing_http_host: str = _yaml_mcp.manufacturing_server.http_host
+    mcp_manufacturing_http_port: int = _yaml_mcp.manufacturing_server.http_port
+
+    mcp_documents_transport: str = _yaml_mcp.documents_server.transport
+    mcp_documents_http_host: str = _yaml_mcp.documents_server.http_host
+    mcp_documents_http_port: int = _yaml_mcp.documents_server.http_port
+
+    mcp_tool_timeout_seconds: int = _yaml_mcp.tool_execution.timeout_seconds
+    mcp_tool_max_retries: int = _yaml_mcp.tool_execution.max_retries
+
+    # Structured, nested access to the same configuration.
     rag: RagConfig = Field(default_factory=lambda: _yaml_rag.model_copy(deep=True))
     models: ModelsConfig = Field(default_factory=lambda: _yaml_models.model_copy(deep=True))
     vision: VisionConfig = Field(default_factory=lambda: _yaml_vision.model_copy(deep=True))
-
-    # MCP (Phase 5)
-    mcp_manufacturing_server_url: str = Field(...)
-    mcp_documents_server_url: str = Field(...)
+    mcp: McpConfig = Field(default_factory=lambda: _yaml_mcp.model_copy(deep=True))
 
     # CORS
     cors_allowed_origins: str = "http://localhost:3000"
@@ -239,11 +271,10 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _sync_nested_config_from_flat_fields(self) -> "Settings":
         """
-        The flat fields above are the authoritative, env-overridable values
-        (Phase 7 backward compatibility). After validation, mirror them into
-        the nested RagConfig/ModelsConfig/VisionConfig objects so callers that
-        prefer structured access always see the same, single resolved
-        configuration — never a stale YAML-only value.
+        The flat fields above are the authoritative, env-overridable values.
+        After validation, mirror them into the nested config objects so
+        callers that prefer structured access always see the same, single
+        resolved configuration.
         """
         self.models.embedding.model_name = self.embedding_model_name
         self.models.embedding.dimension = self.embedding_dimension
@@ -272,6 +303,15 @@ class Settings(BaseSettings):
         self.vision.upload.allowed_mime_types = list(self.cv_upload_allowed_mime_types)
         self.vision.upload.storage_dir = self.cv_upload_storage_dir
         self.vision.defect_classes = list(self.cv_defect_classes)
+
+        self.mcp.manufacturing_server.transport = self.mcp_manufacturing_transport
+        self.mcp.manufacturing_server.http_host = self.mcp_manufacturing_http_host
+        self.mcp.manufacturing_server.http_port = self.mcp_manufacturing_http_port
+        self.mcp.documents_server.transport = self.mcp_documents_transport
+        self.mcp.documents_server.http_host = self.mcp_documents_http_host
+        self.mcp.documents_server.http_port = self.mcp_documents_http_port
+        self.mcp.tool_execution.timeout_seconds = self.mcp_tool_timeout_seconds
+        self.mcp.tool_execution.max_retries = self.mcp_tool_max_retries
         return self
 
     @property

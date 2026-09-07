@@ -1,45 +1,72 @@
-version: '3.8'
+# ForgeSight AI - local development infrastructure
+#
+# Default usage (lightweight — recommended if you're short on disk space):
+#   docker compose up -d db redis
+#   pip install -e ".[dev]"
+#   alembic upgrade head
+#   python scripts/seed_database.py
+#   uvicorn forgesight.api.main:app --reload
+#
+# Full containerized stack (heavier — needs ~2GB extra for the app image,
+# mostly torch/ultralytics/sentence-transformers):
+#   docker compose --profile full up -d
 
 services:
-  postgres:
-    image: pgvector/pgvector:pg16
-    container_name: forgesight_postgres
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: forgesight-db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-forgesight}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-forgesight_pass}
-      POSTGRES_DB: ${POSTGRES_DB:-forgesight_db}
+      POSTGRES_USER: forgesight
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: forgesight
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - forgesight_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-forgesight}"]
-      interval: 10s
+      test: [ "CMD-SHELL", "pg_isready -U forgesight" ]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
   redis:
     image: redis:7-alpine
-    container_name: forgesight_redis
+    container_name: forgesight-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
+    volumes:
+      - forgesight_redisdata:/data
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
-  api:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: forgesight_api
-    command: uvicorn forgesight.api.main:app --host 0.0.0.0 --port 8000 --reload
-    volumes:
-      - ./src:/app/src
+    container_name: forgesight-app
+    profiles: [ "full" ] # only starts with --profile full
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://forgesight:changeme@db:5432/forgesight
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
-    environment:
-      - POSTGRES_HOST=postgres
-      - REDIS_HOST=redis
-    depends_on:
-      postgres:
-        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
 
 volumes:
-  postgres_data:
+  forgesight_pgdata:
+  forgesight_redisdata:
