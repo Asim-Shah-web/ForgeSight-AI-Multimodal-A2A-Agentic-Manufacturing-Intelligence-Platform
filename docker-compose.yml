@@ -7,8 +7,8 @@
 #   python scripts/seed_database.py
 #   uvicorn forgesight.api.main:app --reload
 #
-# Full containerized stack (heavier — needs ~2GB extra for the app image,
-# mostly torch/ultralytics/sentence-transformers):
+# Full containerized stack (heavier — needs extra space for the app image,
+# mostly torch/ultralytics/sentence-transformers, reused by all services below):
 #   docker compose --profile full up -d
 
 services:
@@ -25,7 +25,7 @@ services:
     volumes:
       - forgesight_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U forgesight" ]
+      test: ["CMD-SHELL", "pg_isready -U forgesight"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -39,7 +39,7 @@ services:
     volumes:
       - forgesight_redisdata:/data
     healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -49,13 +49,15 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: forgesight-app
-    profiles: [ "full" ] # only starts with --profile full
+    profiles: ["full"]
     restart: unless-stopped
     env_file:
       - .env
     environment:
       DATABASE_URL: postgresql+psycopg://forgesight:changeme@db:5432/forgesight
       REDIS_URL: redis://redis:6379/0
+      MCP_MANUFACTURING_SERVER_URL: http://mcp-manufacturing:9001
+      MCP_DOCUMENTS_SERVER_URL: http://mcp-documents:9002
     depends_on:
       db:
         condition: service_healthy
@@ -66,6 +68,50 @@ services:
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+
+  mcp-manufacturing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: forgesight-mcp-manufacturing
+    profiles: ["full"]
+    restart: unless-stopped
+    command: ["python", "-m", "mcp_servers.manufacturing"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://forgesight:changeme@db:5432/forgesight
+      REDIS_URL: redis://redis:6379/0
+      MCP_MANUFACTURING_TRANSPORT: http
+      MCP_MANUFACTURING_HTTP_HOST: 0.0.0.0
+      MCP_MANUFACTURING_HTTP_PORT: "9001"
+    ports:
+      - "9001:9001"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  mcp-documents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: forgesight-mcp-documents
+    profiles: ["full"]
+    restart: unless-stopped
+    command: ["python", "-m", "mcp_servers.documents"]
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://forgesight:changeme@db:5432/forgesight
+      REDIS_URL: redis://redis:6379/0
+      MCP_DOCUMENTS_TRANSPORT: http
+      MCP_DOCUMENTS_HTTP_HOST: 0.0.0.0
+      MCP_DOCUMENTS_HTTP_PORT: "9002"
+    ports:
+      - "9002:9002"
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   forgesight_pgdata:
