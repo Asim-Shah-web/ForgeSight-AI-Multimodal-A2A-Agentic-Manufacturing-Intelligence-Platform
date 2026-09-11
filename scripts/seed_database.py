@@ -17,6 +17,10 @@ duplicates.
 
 from __future__ import annotations
 
+import secrets
+
+from forgesight.config.settings import settings
+
 import asyncio
 import random
 import uuid
@@ -49,6 +53,43 @@ from forgesight.vision.service import process_inspection_image
 logger = get_logger(__name__)
 
 TEST_PASSWORD = "ForgeSight!Test123"
+
+
+
+
+
+
+
+async def seed_agent_orchestrator_system_user(session) -> User:
+    """
+    Phase 11 Step 11.1: seed the single AGENT_ORCHESTRATOR system account
+    used to mint tokens for agent-initiated MCP tool calls.
+
+    This account is never meant to log in interactively — its password is
+    securely random and discarded (not printed, not a known test password),
+    since the only supported way to obtain a token for it is
+    create_access_token(subject=..., role=UserRole.AGENT_ORCHESTRATOR)
+    called directly by the agent runner process, not via POST /auth/token.
+    """
+    username = settings.orchestrator_system_role_username
+    result = await session.execute(select(User).where(User.username == username))
+    existing = result.scalar_one_or_none()
+    if existing is not None:
+        return existing
+
+    random_password = secrets.token_urlsafe(48)
+    user = User(
+        username=username,
+        email=f"{username}@forgesight.internal",
+        full_name="ForgeSight Agent Orchestrator (system account)",
+        hashed_password=hash_password(random_password),
+        role=UserRole.AGENT_ORCHESTRATOR,
+    )
+    session.add(user)
+    await session.flush()
+    await session.refresh(user)
+    logger.info("seed_agent_orchestrator_system_user_created", extra={"username": username})
+    return user
 
 
 async def seed_users(session) -> dict[UserRole, User]:
@@ -375,6 +416,7 @@ async def main() -> None:
 
     async with session_scope() as session:
         users = await seed_users(session)
+        await seed_agent_orchestrator_system_user(session)
         await seed_products(session)
         await seed_lines_and_machines(session)
         await seed_suppliers_and_lots(session)
@@ -385,7 +427,6 @@ async def main() -> None:
         await seed_inspection_evidence(session, target_board_id)
 
     logger.info("seed_database_complete")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
