@@ -79,7 +79,7 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
-
+instrument_fastapi_app(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
