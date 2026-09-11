@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from jose import jwt
 
 from forgesight.api.security import (
+    APPROVAL_PERMISSIONS,
     ROLE_PERMISSIONS,
     create_access_token,
     require_roles,
@@ -95,3 +96,28 @@ def test_system_administrator_lacks_approve_permission() -> None:
     assert approval_permissions == set(), (
         f"SYSTEM_ADMINISTRATOR must not hold any approval permission, found: {approval_permissions}"
     )
+
+    def test_agent_orchestrator_lacks_every_approval_permission() -> None:
+    """
+    Phase 11 Step 11.1: AGENT_ORCHESTRATOR must never hold any approval
+    permission — it can gather evidence and generate recommendations, but
+    it can never itself constitute a HITL sign-off. Checked against the
+    single source of truth (APPROVAL_PERMISSIONS) rather than a hardcoded
+    substring match, so this test fails loudly if a new approval permission
+    is ever added to APPROVAL_PERMISSIONS but accidentally also granted here.
+    """
+    orchestrator_permissions = ROLE_PERMISSIONS[UserRole.AGENT_ORCHESTRATOR]
+    granted_approval_permissions = orchestrator_permissions & APPROVAL_PERMISSIONS
+    assert granted_approval_permissions == set(), (
+        f"AGENT_ORCHESTRATOR must not hold any approval permission, "
+        f"found: {granted_approval_permissions}"
+    )
+
+
+def test_agent_orchestrator_is_not_a_human_persona_role() -> None:
+    """AGENT_ORCHESTRATOR must be excluded from HUMAN_PERSONA_ROLES, since
+    it's the sole non-human role in the UserRole enum."""
+    from forgesight.domain.models.users import HUMAN_PERSONA_ROLES
+
+    assert UserRole.AGENT_ORCHESTRATOR not in HUMAN_PERSONA_ROLES
+    assert len(HUMAN_PERSONA_ROLES) == 7
