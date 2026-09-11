@@ -1,0 +1,1 @@
+"""Observability package: distributed tracing (OTel) and its bridge into logging."""
