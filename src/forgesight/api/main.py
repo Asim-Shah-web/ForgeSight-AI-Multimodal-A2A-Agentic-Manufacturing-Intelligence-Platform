@@ -21,6 +21,11 @@ from forgesight.config.logging import configure_logging, get_logger
 from forgesight.config.redis_client import close_redis_pool, get_redis_client
 from forgesight.config.settings import settings
 
+
+from forgesight.observability.tracing import configure_tracing, instrument_fastapi_app, instrument_httpx, instrument_sqlalchemy
+from forgesight.config.database import engine as db_engine
+
+
 # Import domain models so SQLModel.metadata is fully populated before
 # create_db_and_tables() runs at startup.
 import forgesight.domain.models  # noqa: F401
@@ -37,6 +42,9 @@ logger = get_logger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    configure_tracing()
+    instrument_httpx()
+    instrument_sqlalchemy(db_engine)
     """Application startup/shutdown lifecycle."""
     logger.info(
         "application_startup",
