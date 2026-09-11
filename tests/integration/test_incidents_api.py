@@ -209,3 +209,25 @@ async def test_approve_incident_as_quality_engineer_creates_audit_event(
         assert len(audit_rows) == 1
         assert audit_rows[0].approval_by == qe.user_id
         assert audit_rows[0].who == qe.user_id
+
+
+
+        @pytest.mark.asyncio
+async def test_approve_incident_as_agent_orchestrator_returns_403(client: AsyncClient) -> None:
+    """
+    AGENT_ORCHESTRATOR must be as locked out of human sign-off routes as
+    SYSTEM_ADMINISTRATOR is — a system/automation identity can never satisfy
+    a HITL gate, per Phase 6's non-negotiable rule.
+    """
+    from forgesight.api.security import create_access_token
+    from forgesight.domain.models.users import UserRole
+
+    token, _ = create_access_token(subject="forgesight-orchestrator-system", role=UserRole.AGENT_ORCHESTRATOR)
+    response = await client.post(
+        "/api/v1/incidents/INCIDENT-DOES-NOT-NEED-TO-EXIST/approve",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"approval_statement": "An automated system cannot approve an incident."},
+    )
+    # 403 (role not in allowed set) must fire before any 404 (incident lookup),
+    # since RBAC is enforced by the route dependency before the handler body runs.
+    assert response.status_code == 403

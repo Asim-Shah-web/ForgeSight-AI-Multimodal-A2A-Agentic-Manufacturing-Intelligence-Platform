@@ -2,9 +2,11 @@
 JWT authentication and RBAC enforcement.
 
 RBAC permission mapping is derived directly from the Phase 1 persona
-permission matrix (docs/business/personas.md Section 5.3). No endpoint in
-this codebase is reachable without either being explicitly listed as public
-(/health, /auth/token) or protected by `require_roles(...)`.
+permission matrix (docs/business/personas.md Section 5.3), extended in
+Phase 11 with a narrow, no-approval permission set for the non-human
+AGENT_ORCHESTRATOR role. No endpoint in this codebase is reachable without
+either being explicitly listed as public (/health, /auth/token) or
+protected by `require_roles(...)`.
 """
 
 from __future__ import annotations
@@ -110,7 +112,7 @@ async def get_current_user(
 
 
 # ---------------------------------------------------------------------------
-# RBAC permission matrix (Phase 1 personas.md Section 5.3)
+# RBAC permission matrix (Phase 1 personas.md Section 5.3, extended Phase 11)
 # ---------------------------------------------------------------------------
 
 ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
@@ -182,7 +184,40 @@ ROLE_PERMISSIONS: dict[UserRole, set[str]] = {
         # high_risk_hold:approve, scar:approve) — technical administration
         # never unlocks manufacturing/quality approval authority (SEC-003).
     },
+    UserRole.AGENT_ORCHESTRATOR: {
+        # Phase 11 Step 11.1: exactly the read/recommend permissions the
+        # LangGraph agent nodes collectively need to call MCP tools on
+        # behalf of an in-progress investigation. Deliberately excludes
+        # every *:approve, *:modify, *:create, and *:escalate permission —
+        # this role can gather evidence and generate recommendations, but
+        # it can never itself constitute the human sign-off any HITL gate
+        # requires. This exclusion is enforced by test, not just by this
+        # comment (see tests/unit/test_security.py).
+        "incident:read",
+        "evidence:read",
+        "maintenance:read",
+        "maintenance:recommend",
+        "component_lot:read",
+        "hypothesis:read",
+        "corrective_action:read",
+        "report:read",
+    },
 }
+
+# Every permission string anywhere in ROLE_PERMISSIONS that grants approval
+# authority. Used both to define AGENT_ORCHESTRATOR's exclusions above and
+# to let tests assert that exclusion holds without hardcoding the permission
+# list twice.
+APPROVAL_PERMISSIONS: frozenset[str] = frozenset(
+    {
+        "incident:approve",
+        "hypothesis:approve",
+        "corrective_action:approve",
+        "high_risk_hold:approve",
+        "scar:approve",
+        "work_order:approve",
+    }
+)
 
 
 def role_has_permission(role: UserRole, permission: str) -> bool:
