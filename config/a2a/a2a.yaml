@@ -1,0 +1,14 @@
+# ForgeSight AI - A2A message/runtime configuration (Phase 6 a2a-architecture.md)
+message_bus:
+  transport: in_process
+
+retry_policy:
+  transient_error_max_retries: 2
+  transient_error_backoff_seconds: 2
+  escalate_after_consecutive_errors: 3
+
+tracing:
+  enabled: true
+  otlp_endpoint: http://localhost:4317
+  service_name: forgesight-agents
+  sample_rate: 1.0
