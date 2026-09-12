@@ -1,1 +1,1 @@
-"""Agents package."""
+"""Agent subsystem: LangGraph orchestrator, 10 specialist agent nodes, LLM client, MCP client."""
