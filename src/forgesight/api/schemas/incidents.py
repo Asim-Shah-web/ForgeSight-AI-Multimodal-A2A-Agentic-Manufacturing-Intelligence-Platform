@@ -88,3 +88,16 @@ class IncidentApprovalRequest(SQLModel):
         if not value.strip():
             raise ValueError("approval_statement cannot be blank")
         return value
+
+class InvestigationStatusResponse(SQLModel):
+    incident_id: str
+    current_stage: int
+    status: str
+    evidence_graph_summary: dict
+    pending_approvals: list[dict]
+    completed_stages: list[int]
+
+
+class InvestigationResumeRequest(SQLModel):
+    approved: bool
+    notes: Optional[str] = Field(default=None, max_length=2000)
