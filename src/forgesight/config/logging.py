@@ -2,9 +2,10 @@
 Structured JSON logging configuration for ForgeSight AI.
 
 No print() statements are used anywhere in this codebase — all runtime
-diagnostics flow through the logger configured here, so that logs are
-consistently structured (JSON) and can be shipped to a centralized logging
-system in production.
+diagnostics flow through the logger configured here. As of Phase 11, log
+records emitted while an OpenTelemetry span is active automatically carry
+trace_id/span_id fields (see TraceContextFilter), so logs and traces are
+correlatable without a separate scheme.
 """
 
 from __future__ import annotations
@@ -37,11 +38,7 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)
 
-        # Allow callers to attach structured extra fields, e.g.
-        # logger.info("incident created", extra={"incident_id": str(incident_id)})
-        reserved = set(logging.LogRecord(
-            "", 0, "", 0, "", (), None
-        ).__dict__.keys())
+        reserved = set(logging.LogRecord("", 0, "", 0, "", (), None).__dict__.keys())
         for key, value in record.__dict__.items():
             if key not in reserved and key not in payload:
                 payload[key] = value
@@ -55,19 +52,21 @@ def configure_logging() -> None:
     if _LOGGER_CONFIGURED:
         return
 
+    # Imported lazily to avoid a circular import (observability imports
+    # settings; settings has no dependency on observability).
+    from forgesight.observability.logging_bridge import TraceContextFilter
+
     root_logger = logging.getLogger()
     root_logger.handlers.clear()
 
     handler = logging.StreamHandler(stream=sys.stdout)
     handler.setFormatter(JsonFormatter())
+    handler.addFilter(TraceContextFilter())
     root_logger.addHandler(handler)
     root_logger.setLevel(logging.DEBUG if settings.debug else logging.INFO)
 
-    # Quiet down noisy third-party loggers unless debugging.
     for noisy_logger in ("sqlalchemy.engine", "uvicorn.access"):
-        logging.getLogger(noisy_logger).setLevel(
-            logging.INFO if settings.debug else logging.WARNING
-        )
+        logging.getLogger(noisy_logger).setLevel(logging.INFO if settings.debug else logging.WARNING)
 
     _LOGGER_CONFIGURED = True
 
