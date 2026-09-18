@@ -4,7 +4,8 @@ Every write operation here emits an AuditEvent. The /approve endpoint is the
 mandatory Stage 11 Human Engineer Review & Sign-Off HITL gate (Phase 1 Rule 1
 / Phase 6 mandatory rule) — it can never be bypassed programmatically.
 """
-
+from forgesight.agents.orchestrator import resume_investigation, start_investigation
+from forgesight.api.schemas.incidents import InvestigationResumeRequest, InvestigationStatusResponse
 from __future__ import annotations
 
 import uuid
@@ -352,3 +353,154 @@ async def approve_incident(
         extra={"incident_id": incident.incident_id, "approved_by": str(current_user.user_id)},
     )
     return IncidentResponse.model_validate(incident)
+
+
+@router.post(
+    "/{incident_id}/investigate",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_roles(UserRole.QUALITY_ENGINEER))],
+)
+async def start_incident_investigation(
+    incident_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Starts the LangGraph investigation run (Stages 2-9) for an existing
+    incident. Runs to the first HITL interrupt (hypothesis confirmation)
+    and returns immediately with status "started" — the caller polls
+    GET /investigation-status for progress.
+    """
+    result = await session.execute(select(Incident).where(Incident.incident_id == incident_id))
+    incident = result.scalar_one_or_none()
+    if incident is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Incident '{incident_id}' not found.")
+
+    state = await start_investigation(incident_id)
+
+    audit_event = AuditEvent(
+        who=current_user.user_id,
+        what=AuditEventType.AI_RECOMMENDATION_GENERATED,
+        target_id=incident_id,
+        target_type="incident",
+        action="start_investigation",
+        result="success",
+        new_state={"current_stage": state["current_stage"], "status": state["status"]},
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(audit_event)
+    await session.flush()
+
+    return {"incident_id": incident_id, "status": "started", "current_stage": state["current_stage"]}
+
+
+@router.get(
+    "/{incident_id}/investigation-status",
+    response_model=InvestigationStatusResponse,
+    dependencies=[
+        Depends(
+            require_roles(
+                UserRole.QUALITY_ENGINEER,
+                UserRole.QUALITY_MANAGER,
+                UserRole.MANUFACTURING_ENGINEER,
+                UserRole.MAINTENANCE_ENGINEER,
+                UserRole.SUPPLIER_QUALITY_ENGINEER,
+            )
+        )
+    ],
+)
+async def get_investigation_status(incident_id: str) -> InvestigationStatusResponse:
+    """Returns the current LangGraph-checkpointed InvestigationState for an incident."""
+    from forgesight.agents.orchestrator import get_compiled_graph
+
+    compiled_graph = await get_compiled_graph()
+    config = {"configurable": {"thread_id": incident_id}}
+    current_state = await compiled_graph.aget_state(config)
+
+    if current_state is None or not current_state.values:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No investigation run found for incident '{incident_id}'.",
+        )
+
+    values = current_state.values
+    return InvestigationStatusResponse(
+        incident_id=incident_id,
+        current_stage=values["current_stage"],
+        status=values["status"],
+        evidence_graph_summary={k: v.get("gap", False) for k, v in values["evidence_graph"].items() if isinstance(v, dict)},
+        pending_approvals=values["pending_approvals"],
+        completed_stages=values["completed_stages"],
+    )
+
+
+@router.post(
+    "/{incident_id}/investigation/resume",
+    response_model=InvestigationStatusResponse,
+)
+async def resume_incident_investigation(
+    incident_id: str,
+    payload: InvestigationResumeRequest,
+    request: Request,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> InvestigationStatusResponse:
+    """
+    Resolves the current HITL interrupt for an investigation. The caller's
+    role must match the pending gate's requires_approval_by — this is
+    checked in the handler body (not a static require_roles list) since
+    which role is required depends on which gate is currently pending.
+    """
+    from forgesight.agents.orchestrator import get_compiled_graph
+
+    compiled_graph = await get_compiled_graph()
+    config = {"configurable": {"thread_id": incident_id}}
+    current_state = await compiled_graph.aget_state(config)
+
+    if current_state is None or not current_state.values:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No investigation run found for incident '{incident_id}'.")
+
+    pending_gate = next((a for a in current_state.values["pending_approvals"] if a.get("status") == "pending"), None)
+    if pending_gate is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No pending approval gate for this incident.")
+
+    required_role_name = pending_gate.get("requires_approval_by", "")
+    required_role_map = {
+        "Quality Engineer": UserRole.QUALITY_ENGINEER,
+        "Maintenance Engineer": UserRole.MAINTENANCE_ENGINEER,
+        "Quality Manager": UserRole.QUALITY_MANAGER,
+    }
+    required_role = required_role_map.get(required_role_name)
+    if required_role is not None and current_user.role != required_role:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"This approval gate requires role '{required_role_name}'.",
+        )
+
+    result = await resume_investigation(
+        incident_id, approved=payload.approved, approver_role=current_user.role.value, notes=payload.notes or ""
+    )
+
+    audit_event = AuditEvent(
+        who=current_user.user_id,
+        what=AuditEventType.HUMAN_APPROVAL if payload.approved else AuditEventType.HUMAN_REJECTION,
+        target_id=incident_id,
+        target_type="incident",
+        action="resume_investigation",
+        result="success",
+        new_state={"approved": payload.approved, "notes": payload.notes, "gate": pending_gate.get("gate")},
+        approval_by=current_user.user_id,
+        ip_address=request.client.host if request.client else None,
+    )
+    session.add(audit_event)
+    await session.flush()
+
+    return InvestigationStatusResponse(
+        incident_id=incident_id,
+        current_stage=result["current_stage"],
+        status=result["status"],
+        evidence_graph_summary={k: v.get("gap", False) for k, v in result["evidence_graph"].items() if isinstance(v, dict)},
+        pending_approvals=result["pending_approvals"],
+        completed_stages=result["completed_stages"],
+    )
