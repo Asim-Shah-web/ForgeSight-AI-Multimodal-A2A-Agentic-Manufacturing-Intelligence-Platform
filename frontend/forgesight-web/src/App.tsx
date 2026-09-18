@@ -1,29 +1,49 @@
-import React from 'react'
+import React from 'react';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { AppShell } from '@/components/layout/AppShell';
+import { LoginPage } from '@/pages/LoginPage';
+import { IncidentListPage } from '@/pages/IncidentListPage';
+import { CreateIncidentPage } from '@/pages/CreateIncidentPage';
+import { IncidentDetailPage } from '@/pages/IncidentDetailPage';
+import { InvestigationWorkspacePage } from '@/pages/InvestigationWorkspacePage';
+
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+});
 
 export default function App() {
   return (
-    <div style={{ padding: '2rem', fontFamily: 'sans-serif', backgroundColor: '#0f172a', color: '#f8fafc', minHeight: '100vh' }}>
-      <header style={{ borderBottom: '1px solid #334155', pb: '1rem', mb: '2rem' }}>
-        <h1 style={{ color: '#38bdf8' }}>ForgeSight AI</h1>
-        <p style={{ color: '#94a3b8' }}>A2A-Powered Multimodal Manufacturing Intelligence Platform</p>
-      </header>
-
-      <main style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '1.5rem' }}>
-        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '8px', border: '1px solid #334155' }}>
-          <h2 style={{ color: '#f1f5f9' }}>🔍 Visual Inspection</h2>
-          <p style={{ color: '#94a3b8' }}>Real-time defect detection and visual evidence correlation.</p>
-        </div>
-
-        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '8px', border: '1px solid #334155' }}>
-          <h2 style={{ color: '#f1f5f9' }}>🤝 Agent Collaboration (A2A)</h2>
-          <p style={{ color: '#94a3b8' }}>Supervisor, Vision, Quality, and Root Cause agent orchestration.</p>
-        </div>
-
-        <div style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '8px', border: '1px solid #334155' }}>
-          <h2 style={{ color: '#f1f5f9' }}>⚡ MCP Operational Tools</h2>
-          <p style={{ color: '#94a3b8' }}>Seamless access to QMS, inventory, and maintenance telemetries.</p>
-        </div>
-      </main>
-    </div>
-  )
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              element={
+                <ProtectedRoute>
+                  <AppShell />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<IncidentListPage />} />
+              <Route
+                path="/incidents/new"
+                element={
+                  <ProtectedRoute allowedRoles={['production_operator', 'quality_engineer']}>
+                    <CreateIncidentPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/incidents/:incidentId" element={<IncidentDetailPage />} />
+              <Route path="/incidents/:incidentId/investigation" element={<InvestigationWorkspacePage />} />
+            </Route>
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
 }
