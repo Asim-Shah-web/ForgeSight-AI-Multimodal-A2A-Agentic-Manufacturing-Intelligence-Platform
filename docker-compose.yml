@@ -25,7 +25,7 @@ services:
     volumes:
       - forgesight_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U forgesight"]
+      test: [ "CMD-SHELL", "pg_isready -U forgesight" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -39,7 +39,7 @@ services:
     volumes:
       - forgesight_redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD", "redis-cli", "ping" ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -49,7 +49,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: forgesight-app
-    profiles: ["full"]
+    profiles: [ "full" ]
     restart: unless-stopped
     env_file:
       - .env
@@ -74,9 +74,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: forgesight-mcp-manufacturing
-    profiles: ["full"]
+    profiles: [ "full" ]
     restart: unless-stopped
-    command: ["python", "-m", "mcp_servers.manufacturing"]
+    command: [ "python", "-m", "mcp_servers.manufacturing" ]
     env_file:
       - .env
     environment:
@@ -96,9 +96,9 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: forgesight-mcp-documents
-    profiles: ["full"]
+    profiles: [ "full" ]
     restart: unless-stopped
-    command: ["python", "-m", "mcp_servers.documents"]
+    command: [ "python", "-m", "mcp_servers.documents" ]
     env_file:
       - .env
     environment:
@@ -116,3 +116,17 @@ services:
 volumes:
   forgesight_pgdata:
   forgesight_redisdata:
+
+  frontend:
+    build:
+      context: ./frontend/forgesight-web
+      dockerfile: Dockerfile
+    container_name: forgesight-frontend
+    profiles: [ "full" ]
+    restart: unless-stopped
+    environment:
+      VITE_API_BASE_URL: http://localhost:8000/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - app
