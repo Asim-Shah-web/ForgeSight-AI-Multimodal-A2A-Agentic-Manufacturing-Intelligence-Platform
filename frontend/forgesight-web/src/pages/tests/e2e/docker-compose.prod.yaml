@@ -1,0 +1,109 @@
+# ForgeSight AI - PRODUCTION deployment configuration.
+#
+# This is a distinct artifact from docker-compose.yml (developer convenience).
+# Differences: no source bind mounts, resource limits, restart: always,
+# no debug/--reload flags, secrets from .env.production (gitignored) rather
+# than inline defaults.
+#
+# Usage:
+#   cp .env.production.example .env.production   # fill in real secrets
+#   docker compose -f docker-compose.prod.yml up -d
+
+services:
+  db:
+    image: pgvector/pgvector:pg15
+    restart: always
+    env_file: .env.production
+    volumes:
+      - forgesight_pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2G }
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    volumes:
+      - forgesight_redisdata_prod:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    env_file: .env.production
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 6G }
+
+  mcp-manufacturing:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    command: ["python", "-m", "mcp_servers.manufacturing"]
+    env_file: .env.production
+    environment:
+      MCP_MANUFACTURING_TRANSPORT: http
+    depends_on:
+      db: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+
+  mcp-documents:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    command: ["python", "-m", "mcp_servers.documents"]
+    env_file: .env.production
+    environment:
+      MCP_DOCUMENTS_TRANSPORT: http
+    depends_on:
+      db: { condition: service_healthy }
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 4G }
+
+  frontend:
+    build:
+      context: ./frontend/forgesight-web
+      dockerfile: Dockerfile.prod
+    restart: always
+    ports:
+      - "3000:80"
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+
+volumes:
+  forgesight_pgdata_prod:
+  forgesight_redisdata_prod:
+
+# NOTE: no jaeger service here — production tracing should point
+# tracing_otlp_endpoint (in .env.production) at your real observability
+# backend (e.g. a managed OTLP collector), not a local single-node Jaeger
+# instance. TLS termination is also intentionally not configured here —
+# put a reverse proxy (Traefik, Caddy) or a cloud load balancer in front
+# of this stack; see docs/deployment/production-deployment.md.
